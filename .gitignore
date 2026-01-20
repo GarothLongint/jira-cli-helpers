@@ -1,0 +1,11 @@
+# Nie commituj prawdziwej konfiguracji
+.jira-config
+**/jira-config
+
+# macOS
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+*~

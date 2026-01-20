@@ -1,0 +1,25 @@
+# Jira Configuration Template
+# Copy this file to ~/.jira-config and fill in your values
+# cp ~/.jira-config.dist ~/.jira-config
+# chmod 600 ~/.jira-config
+
+# Jira instance URL (without trailing slash)
+JIRA_URL="https://jira.adeo.com"
+
+# Your Jira email
+JIRA_USER="your.email@example.com"
+
+# Your Jira API token (generate at: Profile → Personal Access Tokens)
+JIRA_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Default project key
+JIRA_PROJECT="DEV1"
+
+# Your Jira user ID (find it via: /rest/api/2/myself)
+JIRA_USER_ID="12345678"
+
+# Board ID for sprint operations (find in board URL)
+JIRA_BOARD_ID="14401"
+
+# Story Points custom field ID (usually customfield_10040)
+JIRA_STORY_POINTS_FIELD="customfield_10040"

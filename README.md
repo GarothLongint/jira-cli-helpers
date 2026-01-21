@@ -126,10 +126,19 @@ jira-move-to-sprint "DEV1-1706,DEV1-1705" 42492  # Przenieś zadania do sprintu
 
 ## Wymagania
 
-- `bash` lub `zsh`
+- `bash` lub `zsh` (Linux/macOS) lub Git Bash/WSL (Windows)
 - `curl`
 - `jq`
 - Dostęp do instancji Jira z włączonym API
+
+## Wsparcie dla Windows
+
+Projekt działa na Windows przez:
+- **Git Bash** - zalecane, proste w użyciu
+- **WSL (Windows Subsystem for Linux)** - pełna kompatybilność
+- **PowerShell** - wymaga przepisania funkcji (w planach)
+
+Szczegółową instrukcję instalacji na Windows znajdziesz w [WINDOWS.md](WINDOWS.md)
 
 ## Licencja
 

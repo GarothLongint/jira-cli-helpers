@@ -30,6 +30,115 @@ export JIRA_USER_ID
 export JIRA_BOARD_ID
 export JIRA_STORY_POINTS_FIELD
 
+jira-init() {
+    echo "=== Jira CLI Configuration ==="
+    echo ""
+    
+    # Check if config already exists
+    if [ -f "$JIRA_CONFIG_FILE" ]; then
+        echo "⚠ Config file already exists at: $JIRA_CONFIG_FILE"
+        echo -n "Overwrite? (y/n): "
+        read -r overwrite
+        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+            echo "✗ Initialization cancelled"
+            return 1
+        fi
+    fi
+    
+    # Gather configuration
+    echo -n "Jira URL (e.g., https://jira.adeo.com): "
+    read -r jira_url
+    
+    echo -n "Jira Username/Email: "
+    read -r jira_user
+    
+    echo -n "Jira API Token: "
+    read -rs jira_token
+    echo ""
+    
+    echo -n "Default Project Key (e.g., DEV1): "
+    read -r jira_project
+    
+    echo -n "Your Jira User ID: "
+    read -r jira_user_id
+    
+    echo -n "Board ID (optional, press Enter to skip): "
+    read -r jira_board_id
+    
+    echo -n "Story Points Field (default: customfield_10040): "
+    read -r jira_story_points
+    jira_story_points="${jira_story_points:-customfield_10040}"
+    
+    # Validate required fields
+    if [ -z "$jira_url" ] || [ -z "$jira_user" ] || [ -z "$jira_token" ] || [ -z "$jira_project" ] || [ -z "$jira_user_id" ]; then
+        echo "✗ Error: All required fields must be filled"
+        return 1
+    fi
+    
+    # Create config file
+    cat > "$JIRA_CONFIG_FILE" << EOF
+JIRA_URL="$jira_url"
+JIRA_USER="$jira_user"
+JIRA_TOKEN="$jira_token"
+JIRA_PROJECT="$jira_project"
+JIRA_USER_ID="$jira_user_id"
+JIRA_BOARD_ID="$jira_board_id"
+JIRA_STORY_POINTS_FIELD="$jira_story_points"
+EOF
+    
+    chmod 600 "$JIRA_CONFIG_FILE"
+    
+    echo ""
+    echo "✓ Configuration saved to: $JIRA_CONFIG_FILE"
+    echo "✓ File permissions set to 600 (owner read/write only)"
+    echo ""
+    
+    # Add to shell configuration
+    echo -n "Add jira-helpers to shell startup? (y/n): "
+    read -r add_to_shell
+    
+    if [[ "$add_to_shell" =~ ^[Yy]$ ]]; then
+        local shell_config=""
+        local current_shell=$(basename "$SHELL")
+        
+        case "$current_shell" in
+            zsh)
+                shell_config="$HOME/.zshrc"
+                ;;
+            bash)
+                if [ -f "$HOME/.bash_profile" ]; then
+                    shell_config="$HOME/.bash_profile"
+                else
+                    shell_config="$HOME/.bashrc"
+                fi
+                ;;
+            *)
+                echo "⚠ Unsupported shell: $current_shell"
+                echo "Add this line manually to your shell config:"
+                echo "  source $(realpath "${BASH_SOURCE[0]:-$0}")"
+                return 0
+                ;;
+        esac
+        
+        # Get the absolute path to jira-helpers.sh
+        local script_path="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/$(basename "${BASH_SOURCE[0]:-$0}")"
+        local source_line="source \"$script_path\""
+        
+        # Check if already added
+        if grep -qF "$source_line" "$shell_config" 2>/dev/null; then
+            echo "✓ Already added to $shell_config"
+        else
+            echo "" >> "$shell_config"
+            echo "# Jira CLI Helpers" >> "$shell_config"
+            echo "$source_line" >> "$shell_config"
+            echo "✓ Added to $shell_config"
+        fi
+        
+        echo ""
+        echo "Reload your shell with: exec $SHELL"
+    fi
+}
+
 jira-create() {
     local summary="$1"
     local description="${2:-}"
@@ -211,13 +320,13 @@ jira-story-points() {
 }
 
 jira-my-tasks() {
-    local status="${1:-In Progress,To Do,New}"
+    local task_status="${1:-In Progress,To Do,New}"
     
-    echo "=== My Tasks ($status) ==="
+    echo "=== My Tasks ($task_status) ==="
     curl -s -X GET \
         -H "Authorization: Bearer $JIRA_TOKEN" \
         -H "Content-Type: application/json" \
-        "$JIRA_URL/rest/api/2/search?jql=assignee=currentUser()+AND+status+in+($status)+ORDER+BY+created+DESC&maxResults=50" \
+        "$JIRA_URL/rest/api/2/search?jql=assignee=currentUser()+AND+status+in+($task_status)+ORDER+BY+created+DESC&maxResults=50" \
         | jq -r '.issues[] | "\(.key): \(.fields.summary) [\(.fields.status.name)]"'
 }
 
@@ -309,9 +418,9 @@ jira-change-type() {
 
 jira-transition() {
     local issue_key="$1"
-    local status="$2"
+    local target_status="$2"
     
-    if [ -z "$issue_key" ] || [ -z "$status" ]; then
+    if [ -z "$issue_key" ] || [ -z "$target_status" ]; then
         echo "Usage: jira-transition DEV1-123 Done"
         echo "Common statuses: Done, In Progress, To Do"
         return 1
@@ -324,10 +433,10 @@ jira-transition() {
         "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
     
     # Find transition ID by name
-    local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$(echo $status | tr '[:upper:]' '[:lower:]')\")) | .id" | head -1)
+    local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$(echo $target_status | tr '[:upper:]' '[:lower:]')\")) | .id" | head -1)
     
     if [ -z "$transition_id" ]; then
-        echo "✗ Could not find transition to '$status'"
+        echo "✗ Could not find transition to '$target_status'"
         echo "Available transitions:"
         echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
         return 1
@@ -338,7 +447,7 @@ jira-transition() {
         -H "Content-Type: application/json" \
         "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
         -d "{\"transition\": {\"id\": \"$transition_id\"}}" \
-        && echo "✓ Transitioned $issue_key to $status" \
+        && echo "✓ Transitioned $issue_key to $target_status" \
         || echo "✗ Failed to transition"
 }
 

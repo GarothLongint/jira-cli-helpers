@@ -275,3 +275,84 @@ jira-transition() {
         && echo "✓ Transitioned $issue_key to $status" \
         || echo "✗ Failed to transition"
 }
+
+jira-mark-done() {
+    local issue_key="$1"
+    
+    if [ -z "$issue_key" ]; then
+        echo "Usage: jira-mark-done DEV1-123"
+        return 1
+    fi
+    
+    # Get all transitions
+    local transitions=$(curl -s -X GET \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
+    
+    # Try multiple paths to Done/Gotowe
+    local done_keywords=("done" "gotowe" "closed" "zamknięte")
+    
+    for keyword in "${done_keywords[@]}"; do
+        local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$keyword\")) | .id" | head -1)
+        
+        if [ -n "$transition_id" ]; then
+            curl -s -X POST \
+                -H "Authorization: Bearer $JIRA_TOKEN" \
+                -H "Content-Type: application/json" \
+                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+                -d "{\"transition\": {\"id\": \"$transition_id\"}}" \
+                && echo "✓ Marked $issue_key as Done" \
+                && return 0
+        fi
+    done
+    
+    # If no direct transition, try intermediate states
+    echo "⚠ No direct transition to Done. Trying intermediate states..."
+    
+    # Try: -> Approved -> Test OK -> Done
+    local approved_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("appr")) | .id' | head -1)
+    if [ -n "$approved_id" ]; then
+        curl -s -X POST \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+            -d "{\"transition\": {\"id\": \"$approved_id\"}}"
+        
+        # Refresh transitions
+        transitions=$(curl -s -X GET \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
+        
+        local test_ok_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("test ok")) | .id' | head -1)
+        if [ -n "$test_ok_id" ]; then
+            curl -s -X POST \
+                -H "Authorization: Bearer $JIRA_TOKEN" \
+                -H "Content-Type: application/json" \
+                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+                -d "{\"transition\": {\"id\": \"$test_ok_id\"}}"
+            
+            # Try Done again
+            transitions=$(curl -s -X GET \
+                -H "Authorization: Bearer $JIRA_TOKEN" \
+                -H "Content-Type: application/json" \
+                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
+            
+            local done_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("gotowe")) | .id' | head -1)
+            if [ -n "$done_id" ]; then
+                curl -s -X POST \
+                    -H "Authorization: Bearer $JIRA_TOKEN" \
+                    -H "Content-Type: application/json" \
+                    "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+                    -d "{\"transition\": {\"id\": \"$done_id\"}}" \
+                    && echo "✓ Marked $issue_key as Done" \
+                    && return 0
+            fi
+        fi
+    fi
+    
+    echo "✗ Could not find path to Done. Available transitions:"
+    echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
+    return 1
+}

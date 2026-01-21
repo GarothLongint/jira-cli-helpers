@@ -31,18 +31,57 @@ export JIRA_BOARD_ID
 export JIRA_STORY_POINTS_FIELD
 
 jira-init() {
+    local config_name="${1:-}"
+    local target_config="${JIRA_CONFIG_FILE}"
+    
+    # If config name provided, use named config
+    if [ -n "$config_name" ]; then
+        target_config="$HOME/.jira-config-$config_name"
+    fi
+    
     echo "=== Jira CLI Configuration ==="
     echo ""
     
-    # Check if config already exists
-    if [ -f "$JIRA_CONFIG_FILE" ]; then
-        echo "⚠ Config file already exists at: $JIRA_CONFIG_FILE"
-        echo -n "Overwrite? (y/n): "
-        read -r overwrite
-        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-            echo "✗ Initialization cancelled"
-            return 1
-        fi
+    # Check if config already exists and show current configuration
+    if [ -f "$target_config" ]; then
+        echo "⚠ Configuration already exists at: $target_config"
+        echo ""
+        echo "Current configuration:"
+        echo "  Project: ${JIRA_PROJECT:-<not set>}"
+        echo "  User: ${JIRA_USER:-<not set>}"
+        echo "  URL: ${JIRA_URL:-<not set>}"
+        echo ""
+        echo "Options:"
+        echo "  1) Overwrite this configuration"
+        echo "  2) Create new named configuration (e.g., jira-init project2)"
+        echo "  3) Cancel"
+        echo ""
+        echo -n "Choose option (1/2/3): "
+        read -r choice
+        
+        case "$choice" in
+            1)
+                echo "Overwriting existing configuration..."
+                ;;
+            2)
+                echo -n "Enter configuration name: "
+                read -r new_name
+                if [ -z "$new_name" ]; then
+                    echo "✗ Configuration name cannot be empty"
+                    return 1
+                fi
+                target_config="$HOME/.jira-config-$new_name"
+                if [ -f "$target_config" ]; then
+                    echo "✗ Configuration '$new_name' already exists"
+                    return 1
+                fi
+                ;;
+            3|*)
+                echo "✗ Initialization cancelled"
+                return 1
+                ;;
+        esac
+        echo ""
     fi
     
     # Gather configuration
@@ -76,7 +115,7 @@ jira-init() {
     fi
     
     # Create config file
-    cat > "$JIRA_CONFIG_FILE" << EOF
+    cat > "$target_config" << EOF
 JIRA_URL="$jira_url"
 JIRA_USER="$jira_user"
 JIRA_TOKEN="$jira_token"
@@ -86,12 +125,25 @@ JIRA_BOARD_ID="$jira_board_id"
 JIRA_STORY_POINTS_FIELD="$jira_story_points"
 EOF
     
-    chmod 600 "$JIRA_CONFIG_FILE"
+    chmod 600 "$target_config"
     
     echo ""
-    echo "✓ Configuration saved to: $JIRA_CONFIG_FILE"
+    echo "✓ Configuration saved to: $target_config"
     echo "✓ File permissions set to 600 (owner read/write only)"
     echo ""
+    
+    # Show how to switch contexts if named config
+    if [ "$target_config" != "$JIRA_CONFIG_FILE" ]; then
+        local config_name=$(basename "$target_config" | sed 's/^\.jira-config-//')
+        echo "To use this configuration, run:"
+        echo "  export JIRA_CONFIG_FILE=\"$target_config\""
+        echo "  source jira-helpers.sh"
+        echo ""
+        echo "Or create an alias in your shell config:"
+        echo "  alias jira-$config_name='JIRA_CONFIG_FILE=\"$target_config\" source jira-helpers.sh'"
+        echo ""
+        return 0
+    fi
     
     # Add to shell configuration
     echo -n "Add jira-helpers to shell startup? (y/n): "
@@ -530,4 +582,58 @@ jira-mark-done() {
     echo "✗ Could not find path to Done. Available transitions:"
     echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
     return 1
+}
+
+jira-switch() {
+    local config_name="$1"
+    
+    if [ -z "$config_name" ]; then
+        echo "=== Available Jira Configurations ==="
+        echo ""
+        
+        # Show default config
+        if [ -f "$HOME/.jira-config" ]; then
+            source "$HOME/.jira-config"
+            echo "  default (current: ${JIRA_CONFIG_FILE})"
+            echo "    Project: ${JIRA_PROJECT}"
+            echo "    User: ${JIRA_USER}"
+            echo ""
+        fi
+        
+        # Show named configs
+        for config in "$HOME"/.jira-config-*; do
+            if [ -f "$config" ]; then
+                local name=$(basename "$config" | sed 's/^\.jira-config-//')
+                source "$config"
+                echo "  $name"
+                echo "    Project: ${JIRA_PROJECT}"
+                echo "    User: ${JIRA_USER}"
+                echo ""
+            fi
+        done
+        
+        echo "Usage: jira-switch <config-name>"
+        echo "   or: jira-switch default"
+        return 0
+    fi
+    
+    local target_config=""
+    if [ "$config_name" = "default" ]; then
+        target_config="$HOME/.jira-config"
+    else
+        target_config="$HOME/.jira-config-$config_name"
+    fi
+    
+    if [ ! -f "$target_config" ]; then
+        echo "✗ Configuration '$config_name' not found at: $target_config"
+        echo "Run 'jira-switch' to see available configurations"
+        return 1
+    fi
+    
+    export JIRA_CONFIG_FILE="$target_config"
+    source "$target_config"
+    
+    echo "✓ Switched to configuration: $config_name"
+    echo "  Project: ${JIRA_PROJECT}"
+    echo "  User: ${JIRA_USER}"
 }

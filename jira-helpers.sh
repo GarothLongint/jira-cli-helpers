@@ -203,3 +203,21 @@ jira-update() {
         && echo "✓ Updated $key description" \
         || echo "✗ Failed to update description"
 }
+
+jira-set-epic() {
+    local issue_key="$1"
+    local epic_key="$2"
+    
+    if [ -z "$issue_key" ] || [ -z "$epic_key" ]; then
+        echo "Usage: jira-set-epic DEV1-123 DEV1-456"
+        return 1
+    fi
+    
+    curl -s -X PUT \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$issue_key" \
+        -d "{\"fields\": {\"customfield_10008\": \"$epic_key\"}}" \
+        && echo "✓ Set epic $epic_key for $issue_key" \
+        || echo "✗ Failed to set epic"
+}

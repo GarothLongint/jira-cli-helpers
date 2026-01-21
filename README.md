@@ -10,22 +10,29 @@ git clone https://github.com/GarothLongint/jira-cli-helpers.git
 cd jira-cli-helpers
 ```
 
-2. Skopiuj i skonfiguruj:
+2. Użyj interaktywnej konfiguracji:
+```bash
+source jira-helpers.sh
+jira-init
+```
+
+Komenda `jira-init` przeprowadzi Cię przez konfigurację:
+- Poprosi o dane do połączenia z Jira (URL, token, projekt)
+- Utworzy plik konfiguracyjny z bezpiecznymi uprawnieniami (600)
+- Zaoferuje dodanie skryptu do shell startup (~/.zshrc lub ~/.bashrc)
+
+### Ręczna konfiguracja (alternatywna metoda)
+
 ```bash
 cp jira-config.dist ~/.jira-config
 nano ~/.jira-config  # Wypełnij swoimi danymi
 chmod 600 ~/.jira-config
-```
-
-3. Załaduj skrypt do swojego shell:
-```bash
-# Dodaj do ~/.zshrc lub ~/.bashrc:
 source ~/path/to/jira-helpers.sh
 ```
 
 ## Konfiguracja
 
-Plik `~/.jira-config` musi zawierać:
+Plik `~/.jira-config` zawiera:
 - `JIRA_URL` - URL instancji Jira
 - `JIRA_USER` - Twój email w Jira
 - `JIRA_TOKEN` - API token (Personal Access Token)
@@ -34,7 +41,26 @@ Plik `~/.jira-config` musi zawierać:
 - `JIRA_BOARD_ID` - ID board do operacji sprint
 - `JIRA_STORY_POINTS_FIELD` - ID pola story points (zwykle `customfield_10040`)
 
+### Wiele konfiguracji (konteksty)
+
+Możesz mieć wiele konfiguracji dla różnych projektów lub użytkowników:
+
+```bash
+# Utwórz nową nazwana konfigurację
+jira-init projekt2
+
+# Przełączaj się między kontekstami
+jira-ctx
+# Wybierz numer z listy lub:
+jira-ctx projekt2  # Przełącz się bezpośrednio
+jira-ctx default   # Wróć do domyślnej konfiguracji
+```
+
 ## Dostępne komendy
+
+### Inicjalizacja i zarządzanie kontekstami
+- `jira-init [nazwa]` - interaktywna konfiguracja (opcjonalnie z nazwą dla wielu kontekstów)
+- `jira-ctx [nazwa]` - przełączanie między konfiguracjami z interaktywnym menu
 
 ### Zarządzanie zadaniami
 - `jira-create "Tytuł" ["Opis"] [Type]` - tworzy zadanie (domyślnie Task)
@@ -46,6 +72,8 @@ Plik `~/.jira-config` musi zawierać:
 - `jira-search "JQL" [limit]` - wyszukiwanie z użyciem JQL
 - `jira-story-points DEV1-123 5` - ustaw story points
 - `jira-update DEV1-123 "Nowy opis"` - aktualizuj opis zadania
+- `jira-transition DEV1-123 "Done"` - zmień status zadania
+- `jira-mark-done DEV1-123` - oznacz zadanie jako Done (próbuje różne ścieżki workflow)
 
 ### Zarządzanie sprintem
 - `jira-my-tasks [status]` - pokaż moje zadania (domyślnie: "In Progress,To Do,New")
@@ -55,6 +83,17 @@ Plik `~/.jira-config` musi zawierać:
 ### Przykłady użycia
 
 ```bash
+# Pierwsza konfiguracja
+jira-init
+# Postępuj zgodnie z instrukcjami
+
+# Utwórz dodatkową konfigurację dla innego projektu
+jira-init projekt2
+
+# Przełącz się między kontekstami
+jira-ctx
+# Wybierz [1] lub [2] z menu
+
 # Utwórz zadanie - tradycyjna metoda
 jira-create "Naprawa błędu w koszyku" "Koszyk nie przelicza ceny" "Bug"
 
@@ -71,6 +110,10 @@ jira-list 5
 # Przypisz do siebie i ustaw story points
 jira-assign-me DEV1-1234
 jira-story-points DEV1-1234 3
+
+# Zmień status i oznacz jako Done
+jira-transition DEV1-1234 "In Progress"
+jira-mark-done DEV1-1234
 
 # Wyszukiwanie
 jira-search "assignee=currentUser() AND status=Open"

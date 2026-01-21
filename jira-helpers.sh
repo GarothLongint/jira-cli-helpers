@@ -221,3 +221,57 @@ jira-set-epic() {
         && echo "✓ Set epic $epic_key for $issue_key" \
         || echo "✗ Failed to set epic"
 }
+
+jira-change-type() {
+    local issue_key="$1"
+    local new_type="$2"
+    
+    if [ -z "$issue_key" ] || [ -z "$new_type" ]; then
+        echo "Usage: jira-change-type DEV1-123 Task"
+        echo "Types: Task, Bug, Story, Sub-task"
+        return 1
+    fi
+    
+    curl -s -X PUT \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$issue_key" \
+        -d "{\"fields\": {\"issuetype\": {\"name\": \"$new_type\"}}}" \
+        && echo "✓ Changed $issue_key type to $new_type" \
+        || echo "✗ Failed to change type"
+}
+
+jira-transition() {
+    local issue_key="$1"
+    local status="$2"
+    
+    if [ -z "$issue_key" ] || [ -z "$status" ]; then
+        echo "Usage: jira-transition DEV1-123 Done"
+        echo "Common statuses: Done, In Progress, To Do"
+        return 1
+    fi
+    
+    # Get available transitions
+    local transitions=$(curl -s -X GET \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
+    
+    # Find transition ID by name
+    local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$(echo $status | tr '[:upper:]' '[:lower:]')\")) | .id" | head -1)
+    
+    if [ -z "$transition_id" ]; then
+        echo "✗ Could not find transition to '$status'"
+        echo "Available transitions:"
+        echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
+        return 1
+    fi
+    
+    curl -s -X POST \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+        -d "{\"transition\": {\"id\": \"$transition_id\"}}" \
+        && echo "✓ Transitioned $issue_key to $status" \
+        || echo "✗ Failed to transition"
+}

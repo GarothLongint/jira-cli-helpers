@@ -601,7 +601,9 @@ jira-switch() {
         fi
         
         # Show named configs
-        for config in "$HOME"/.jira-config-*; do
+        setopt localoptions nullglob 2>/dev/null || shopt -s nullglob 2>/dev/null
+        local configs=("$HOME"/.jira-config-*)
+        for config in "${configs[@]}"; do
             if [ -f "$config" ]; then
                 local name=$(basename "$config" | sed 's/^\.jira-config-//')
                 source "$config"

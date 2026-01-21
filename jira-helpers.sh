@@ -591,34 +591,70 @@ jira-switch() {
         echo "=== Available Jira Configurations ==="
         echo ""
         
-        # Show default config
+        # Build array of available configs
+        local -a config_list
+        local -a config_paths
+        local -a config_projects
+        local -a config_users
+        local idx=1
+        
+        # Add default config
         if [ -f "$HOME/.jira-config" ]; then
             source "$HOME/.jira-config"
-            echo "  default (current: ${JIRA_CONFIG_FILE})"
-            echo "    Project: ${JIRA_PROJECT}"
-            echo "    User: ${JIRA_USER}"
-            echo ""
+            config_list+=("default")
+            config_paths+=("$HOME/.jira-config")
+            config_projects+=("${JIRA_PROJECT}")
+            config_users+=("${JIRA_USER}")
         fi
         
-        # Show named configs
+        # Add named configs
         setopt localoptions nullglob 2>/dev/null || shopt -s nullglob 2>/dev/null
         local configs=("$HOME"/.jira-config-*)
         for config in "${configs[@]}"; do
             if [ -f "$config" ]; then
                 local name=$(basename "$config" | sed 's/^\.jira-config-//')
                 source "$config"
-                echo "  $name"
-                echo "    Project: ${JIRA_PROJECT}"
-                echo "    User: ${JIRA_USER}"
-                echo ""
+                config_list+=("$name")
+                config_paths+=("$config")
+                config_projects+=("${JIRA_PROJECT}")
+                config_users+=("${JIRA_USER}")
             fi
         done
         
-        echo "Usage: jira-switch <config-name>"
-        echo "   or: jira-switch default"
-        return 0
+        # Display numbered list
+        if [ ${#config_list[@]} -eq 0 ]; then
+            echo "No configurations found. Run 'jira-init' to create one."
+            return 1
+        fi
+        
+        for ((i=1; i<=${#config_list[@]}; i++)); do
+            local current_marker=""
+            if [ "${config_paths[$i]}" = "${JIRA_CONFIG_FILE}" ]; then
+                current_marker=" (current)"
+            fi
+            echo "  [$i] ${config_list[$i]}$current_marker"
+            echo "      Project: ${config_projects[$i]}"
+            echo "      User: ${config_users[$i]}"
+            echo ""
+        done
+        
+        echo -n "Select configuration (1-${#config_list[@]}) or press Enter to cancel: "
+        read -r selection
+        
+        if [ -z "$selection" ]; then
+            echo "Cancelled"
+            return 0
+        fi
+        
+        if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt ${#config_list[@]} ]; then
+            echo "✗ Invalid selection"
+            return 1
+        fi
+        
+        config_name="${config_list[$selection]}"
     fi
     
+    # Switch to selected config
     local target_config=""
     if [ "$config_name" = "default" ]; then
         target_config="$HOME/.jira-config"

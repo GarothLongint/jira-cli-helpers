@@ -44,6 +44,12 @@ Plik `~/.jira-config` musi zawierać:
 - `jira-comment DEV1-123 "Komentarz"` - dodaj komentarz
 - `jira-search "JQL" [limit]` - wyszukiwanie z użyciem JQL
 - `jira-story-points DEV1-123 5` - ustaw story points
+- `jira-update DEV1-123 "Nowy opis"` - aktualizuj opis zadania
+
+### Zarządzanie sprintem
+- `jira-my-tasks [status]` - pokaż moje zadania (domyślnie: "In Progress,To Do,New")
+- `jira-active-sprint` - pokaż aktywny sprint i jego ID
+- `jira-move-to-sprint "DEV1-123,DEV1-124" SPRINT_ID` - przenieś zadania do sprintu
 
 ### Przykłady użycia
 
@@ -60,6 +66,11 @@ jira-story-points DEV1-1234 3
 
 # Wyszukiwanie
 jira-search "assignee=currentUser() AND status=Open"
+
+# Zarządzanie sprintem
+jira-my-tasks "New"  # Pokaż tylko nowe zadania
+jira-active-sprint  # Sprawdź ID aktywnego sprintu
+jira-move-to-sprint "DEV1-1706,DEV1-1705" 42492  # Przenieś zadania do sprintu
 ```
 
 ## Wymagania

@@ -143,3 +143,63 @@ jira-story-points() {
         && echo "✓ Set story points to $points for $key" \
         || echo "✗ Failed to set story points"
 }
+
+jira-my-tasks() {
+    local status="${1:-In Progress,To Do,New}"
+    
+    echo "=== My Tasks ($status) ==="
+    curl -s -X GET \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/search?jql=assignee=currentUser()+AND+status+in+($status)+ORDER+BY+created+DESC&maxResults=50" \
+        | jq -r '.issues[] | "\(.key): \(.fields.summary) [\(.fields.status.name)]"'
+}
+
+jira-active-sprint() {
+    echo "=== Getting Active Sprint ==="
+    curl -s -X GET \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/agile/1.0/board/$JIRA_BOARD_ID/sprint?state=active" \
+        | jq -r '.values[] | "Sprint ID: \(.id) - \(.name) (State: \(.state))"'
+}
+
+jira-move-to-sprint() {
+    local issue_keys="$1"
+    local sprint_id="$2"
+    
+    if [ -z "$issue_keys" ] || [ -z "$sprint_id" ]; then
+        echo "Usage: jira-move-to-sprint \"DEV1-123,DEV1-124\" SPRINT_ID"
+        echo "To get active sprint ID, use: jira-active-sprint"
+        return 1
+    fi
+    
+    # Convert comma-separated string to JSON array
+    local issues_json=$(echo "$issue_keys" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')
+    
+    curl -s -X POST \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/agile/1.0/sprint/$sprint_id/issue" \
+        -d "{\"issues\": [$issues_json]}" \
+        && echo "✓ Moved issues to sprint $sprint_id" \
+        || echo "✗ Failed to move issues"
+}
+
+jira-update() {
+    local key="$1"
+    local description="$2"
+    
+    if [ -z "$key" ] || [ -z "$description" ]; then
+        echo "Usage: jira-update DEV1-123 \"New description\""
+        return 1
+    fi
+    
+    curl -s -X PUT \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$key" \
+        -d "{\"fields\": {\"description\": \"$description\"}}" \
+        && echo "✓ Updated $key description" \
+        || echo "✗ Failed to update description"
+}

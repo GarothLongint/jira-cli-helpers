@@ -584,7 +584,7 @@ jira-mark-done() {
     return 1
 }
 
-jira-switch() {
+jira-ctx() {
     local config_name="$1"
     
     if [ -z "$config_name" ]; then
@@ -664,7 +664,7 @@ jira-switch() {
     
     if [ ! -f "$target_config" ]; then
         echo "✗ Configuration '$config_name' not found at: $target_config"
-        echo "Run 'jira-switch' to see available configurations"
+        echo "Run 'jira-ctx' to see available configurations"
         return 1
     fi
     
@@ -674,4 +674,9 @@ jira-switch() {
     echo "✓ Switched to configuration: $config_name"
     echo "  Project: ${JIRA_PROJECT}"
     echo "  User: ${JIRA_USER}"
+}
+
+# Alias for backward compatibility
+jira-switch() {
+    jira-ctx "$@"
 }

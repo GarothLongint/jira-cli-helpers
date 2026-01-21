@@ -63,7 +63,7 @@ jira-task() {
     if [ -z "$summary" ]; then
         echo "=== Quick Task Creation ==="
         echo -n "Task title: "
-        read summary
+        read -r summary
         
         if [ -z "$summary" ]; then
             echo "✗ Error: Task title cannot be empty"
@@ -71,7 +71,7 @@ jira-task() {
         fi
         
         echo -n "Task description (optional, press Enter to skip): "
-        read description
+        read -r description
     fi
     
     # Validate summary length
@@ -106,9 +106,13 @@ jira-task() {
         
         # Offer to assign to self
         echo -n "Assign to yourself? (y/n): "
-        read assign_answer
+        read -r assign_answer
         if [[ "$assign_answer" =~ ^[Yy]$ ]]; then
-            jira-assign-me "$issue_key"
+            if jira-assign-me "$issue_key"; then
+                echo ""
+            else
+                echo "⚠ Warning: Failed to assign task to yourself"
+            fi
         fi
     else
         local error_msg=$(echo "$result" | jq -r '.errorMessages // .errors | tostring')

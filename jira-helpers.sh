@@ -55,6 +55,68 @@ jira-create() {
         }" | jq -r 'if .key then "✓ Created: \(.key) - \(.self)" else "✗ Error: \(.errorMessages // .errors | tostring)" end'
 }
 
+jira-task() {
+    local summary="$1"
+    local description="${2:-}"
+    
+    # Interactive mode if no summary provided
+    if [ -z "$summary" ]; then
+        echo "=== Quick Task Creation ==="
+        echo -n "Task title: "
+        read summary
+        
+        if [ -z "$summary" ]; then
+            echo "✗ Error: Task title cannot be empty"
+            return 1
+        fi
+        
+        echo -n "Task description (optional, press Enter to skip): "
+        read description
+    fi
+    
+    # Validate summary length
+    if [ ${#summary} -lt 3 ]; then
+        echo "✗ Error: Task title too short (minimum 3 characters)"
+        return 1
+    fi
+    
+    # Create the task
+    echo "Creating task in project $JIRA_PROJECT..."
+    local result=$(curl -s -X POST \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue" \
+        -d "{
+            \"fields\": {
+                \"project\": {\"key\": \"$JIRA_PROJECT\"},
+                \"summary\": \"$summary\",
+                \"description\": \"$description\",
+                \"issuetype\": {\"name\": \"Task\"}
+            }
+        }")
+    
+    # Parse and display result
+    local issue_key=$(echo "$result" | jq -r '.key // empty')
+    
+    if [ -n "$issue_key" ]; then
+        echo "✓ Task created successfully: $issue_key"
+        echo "  URL: $JIRA_URL/browse/$issue_key"
+        echo "  Summary: $summary"
+        [ -n "$description" ] && echo "  Description: $description"
+        
+        # Offer to assign to self
+        echo -n "Assign to yourself? (y/n): "
+        read assign_answer
+        if [[ "$assign_answer" =~ ^[Yy]$ ]]; then
+            jira-assign-me "$issue_key"
+        fi
+    else
+        local error_msg=$(echo "$result" | jq -r '.errorMessages // .errors | tostring')
+        echo "✗ Error creating task: $error_msg"
+        return 1
+    fi
+}
+
 jira-list() {
     local limit="${1:-10}"
     curl -s -X GET \

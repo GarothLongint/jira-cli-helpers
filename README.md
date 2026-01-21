@@ -38,6 +38,7 @@ Plik `~/.jira-config` musi zawierać:
 
 ### Zarządzanie zadaniami
 - `jira-create "Tytuł" ["Opis"] [Type]` - tworzy zadanie (domyślnie Task)
+- `jira-task ["Tytuł"] ["Opis"]` - szybkie tworzenie zadania typu Task z trybem interaktywnym
 - `jira-list [limit]` - listuje ostatnie zadania (domyślnie 10)
 - `jira-get DEV1-123` - szczegóły zadania
 - `jira-assign-me DEV1-123` - przypisz zadanie do siebie
@@ -54,8 +55,15 @@ Plik `~/.jira-config` musi zawierać:
 ### Przykłady użycia
 
 ```bash
-# Utwórz zadanie
+# Utwórz zadanie - tradycyjna metoda
 jira-create "Naprawa błędu w koszyku" "Koszyk nie przelicza ceny" "Bug"
+
+# Utwórz zadanie typu Task - szybka metoda
+jira-task "Dodać walidację formularza" "Walidacja email i numeru telefonu"
+
+# Utwórz zadanie w trybie interaktywnym (bez parametrów)
+jira-task
+# System zapyta o tytuł i opis
 
 # Lista zadań
 jira-list 5

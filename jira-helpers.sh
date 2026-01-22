@@ -735,44 +735,30 @@ jira-checklist() {
         return 1
     fi
     
-    # Build checklist items in Jira format
-    local checklist_items="["
+    # Build To-Do List items in Jira format (customfield_10504)
+    local steps="["
     local first=true
     for item in "${items[@]}"; do
         if [ "$first" = false ]; then
-            checklist_items+=","
+            steps+=","
         fi
-        checklist_items+="{\"name\":\"$item\",\"checked\":false}"
+        steps+="{\"text\":\"$item\",\"checked\":false}"
         first=false
     done
-    checklist_items+="]"
+    steps+="]"
     
-    # Try to find checklist custom field (usually customfield_10060 or similar)
-    # Get issue to find available custom fields
-    local response=$(curl -s -X GET \
-        -H "Authorization: Bearer $JIRA_TOKEN" \
-        -H "Content-Type: application/json" \
-        "$JIRA_URL/rest/api/2/issue/$key?fields=*all")
-    
-    # Look for checklist field (common names: customfield_10060, customfield_10070, etc)
-    local checklist_field=$(echo "$response" | jq -r '.fields | keys[] | select(startswith("customfield_10")) | select(. as $k | .fields[$k] // {} | type == "object" and has("items"))' | head -1)
-    
-    if [ -z "$checklist_field" ]; then
-        echo "✗ Could not find checklist custom field. Adding as comment instead..."
-        local comment_text="*Checklist:*"
-        for item in "${items[@]}"; do
-            comment_text+="\\n- [ ] $item"
-        done
-        jira-comment "$key" "$comment_text"
-        return
-    fi
-    
-    # Update issue with checklist
-    curl -s -X PUT \
+    # Update issue with To-Do List (customfield_10504)
+    local response=$(curl -s -X PUT \
         -H "Authorization: Bearer $JIRA_TOKEN" \
         -H "Content-Type: application/json" \
         "$JIRA_URL/rest/api/2/issue/$key" \
-        -d "{\"fields\": {\"$checklist_field\": $checklist_items}}" \
-        && echo "✓ Added checklist to $key" \
-        || echo "✗ Failed to add checklist"
+        -d "{\"fields\": {\"customfield_10504\": {\"steps\": $steps}}}")
+    
+    if echo "$response" | grep -q "errorMessages"; then
+        echo "✗ Failed to add checklist:"
+        echo "$response" | jq -r '.errorMessages[]? // .errors? // .'
+        return 1
+    else
+        echo "✓ Added To-Do List with ${#items[@]} items to $key"
+    fi
 }

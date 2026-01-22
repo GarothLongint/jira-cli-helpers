@@ -72,8 +72,9 @@ jira-ctx default   # Wróć do domyślnej konfiguracji
 - `jira-search "JQL" [limit]` - wyszukiwanie z użyciem JQL
 - `jira-story-points DEV1-123 5` - ustaw story points
 - `jira-update DEV1-123 "Nowy opis"` - aktualizuj opis zadania
-- `jira-transition DEV1-123 "Done"` - zmień status zadania
-- `jira-mark-done DEV1-123` - oznacz zadanie jako Done (próbuje różne ścieżki workflow)
+- `jira-transition DEV1-123 "Done"` - zmień status zadania (pojedynczy krok)
+- `jira-transition-to DEV1-123 "Done" [max_hops]` - automatycznie przejdź przez statusy pośrednie do celu
+- `jira-mark-done DEV1-123` - oznacz zadanie jako Done (używa `jira-transition-to`)
 
 ### Zarządzanie sprintem
 - `jira-my-tasks [status]` - pokaż moje zadania (domyślnie: "In Progress,To Do,New")
@@ -113,7 +114,10 @@ jira-story-points DEV1-1234 3
 
 # Zmień status i oznacz jako Done
 jira-transition DEV1-1234 "In Progress"
-jira-mark-done DEV1-1234
+jira-mark-done DEV1-1234  # Automatycznie przejdzie przez wszystkie statusy pośrednie
+
+# Lub użyj bezpośrednio jira-transition-to dla pełnej kontroli
+jira-transition-to DEV1-1234 "To review" 5  # Maksymalnie 5 przejść statusów
 
 # Wyszukiwanie
 jira-search "assignee=currentUser() AND status=Open"

@@ -503,6 +503,119 @@ jira-transition() {
         || echo "✗ Failed to transition"
 }
 
+jira-transition-to() {
+    local issue_key="$1"
+    local target_status="$2"
+    local max_hops="${3:-10}"
+    
+    if [ -z "$issue_key" ] || [ -z "$target_status" ]; then
+        echo "Usage: jira-transition-to DEV1-123 \"Done\" [max_hops]"
+        echo "Automatically transitions through intermediate statuses to reach target"
+        return 1
+    fi
+    
+    local current_hop=0
+    local visited_statuses=()
+    
+    # Preferred transition patterns (order matters)
+    local forward_keywords=("review" "test" "build" "progress" "approve" "gotowe" "done" "close")
+    local avoid_keywords=("block" "reject" "cancel" "reopen")
+    
+    while [ $current_hop -lt $max_hops ]; do
+        # Get current status and available transitions
+        local issue_data=$(curl -s -X GET \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$JIRA_URL/rest/api/2/issue/$issue_key?fields=status")
+        
+        local current_status=$(echo "$issue_data" | jq -r '.fields.status.name')
+        
+        # Check if we reached target
+        if [ "$(echo "$current_status" | tr '[:upper:]' '[:lower:]')" = "$(echo "$target_status" | tr '[:upper:]' '[:lower:]')" ]; then
+            echo "✓ Successfully transitioned $issue_key to $target_status"
+            return 0
+        fi
+        
+        # Prevent infinite loops
+        if [[ " ${visited_statuses[@]} " =~ " ${current_status} " ]]; then
+            echo "✗ Loop detected at status '$current_status'"
+            return 1
+        fi
+        visited_statuses+=("$current_status")
+        
+        echo "→ Current status: $current_status (hop $((current_hop + 1))/$max_hops)"
+        
+        # Get available transitions
+        local transitions=$(curl -s -X GET \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
+        
+        # Try direct transition to target
+        local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$(echo $target_status | tr '[:upper:]' '[:lower:]')\")) | .id" | head -1)
+        local transition_name=""
+        
+        if [ -z "$transition_id" ]; then
+            # No direct path - use smart selection
+            # 1. First, filter out blocked/rejected transitions
+            local filtered_transitions=$(echo "$transitions" | jq -c '[.transitions[] | select(.name | ascii_downcase | (contains("block") or contains("reject") or contains("cancel") or contains("reopen")) | not)]')
+            
+            # 2. Try to find forward-moving transition
+            for keyword in "${forward_keywords[@]}"; do
+                transition_id=$(echo "$filtered_transitions" | jq -r ".[] | select(.name | ascii_downcase | contains(\"$keyword\")) | .id" | head -1)
+                if [ -n "$transition_id" ]; then
+                    transition_name=$(echo "$filtered_transitions" | jq -r ".[] | select(.id == \"$transition_id\") | .name")
+                    break
+                fi
+            done
+            
+            # 3. If still no transition, take first filtered one
+            if [ -z "$transition_id" ]; then
+                transition_id=$(echo "$filtered_transitions" | jq -r '.[0].id')
+                transition_name=$(echo "$filtered_transitions" | jq -r '.[0].name')
+            fi
+            
+            # 4. Last resort - take any transition
+            if [ -z "$transition_id" ] || [ "$transition_id" = "null" ]; then
+                transition_id=$(echo "$transitions" | jq -r '.transitions[0].id')
+                transition_name=$(echo "$transitions" | jq -r '.transitions[0].name')
+            fi
+            
+            if [ -z "$transition_id" ] || [ "$transition_id" = "null" ]; then
+                echo "✗ No available transitions from '$current_status'"
+                echo "Available transitions:"
+                echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
+                return 1
+            fi
+            
+            echo "  ↳ No direct path, trying: $transition_name"
+        else
+            transition_name=$(echo "$transitions" | jq -r ".transitions[] | select(.id == \"$transition_id\") | .name")
+            echo "  ↳ Direct path found to: $target_status"
+        fi
+        
+        # Execute transition
+        local result=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
+            -d "{\"transition\": {\"id\": \"$transition_id\"}}")
+        
+        local http_code=$(echo "$result" | tail -n1)
+        
+        if [ "$http_code" != "204" ]; then
+            echo "✗ Transition failed (HTTP $http_code)"
+            return 1
+        fi
+        
+        current_hop=$((current_hop + 1))
+        sleep 0.5  # Small delay to allow Jira to update
+    done
+    
+    echo "✗ Could not reach '$target_status' within $max_hops transitions"
+    return 1
+}
+
 jira-mark-done() {
     local issue_key="$1"
     
@@ -511,77 +624,8 @@ jira-mark-done() {
         return 1
     fi
     
-    # Get all transitions
-    local transitions=$(curl -s -X GET \
-        -H "Authorization: Bearer $JIRA_TOKEN" \
-        -H "Content-Type: application/json" \
-        "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
-    
-    # Try multiple paths to Done/Gotowe
-    local done_keywords=("done" "gotowe" "closed" "zamknięte")
-    
-    for keyword in "${done_keywords[@]}"; do
-        local transition_id=$(echo "$transitions" | jq -r ".transitions[] | select(.name | ascii_downcase | contains(\"$keyword\")) | .id" | head -1)
-        
-        if [ -n "$transition_id" ]; then
-            curl -s -X POST \
-                -H "Authorization: Bearer $JIRA_TOKEN" \
-                -H "Content-Type: application/json" \
-                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
-                -d "{\"transition\": {\"id\": \"$transition_id\"}}" \
-                && echo "✓ Marked $issue_key as Done" \
-                && return 0
-        fi
-    done
-    
-    # If no direct transition, try intermediate states
-    echo "⚠ No direct transition to Done. Trying intermediate states..."
-    
-    # Try: -> Approved -> Test OK -> Done
-    local approved_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("appr")) | .id' | head -1)
-    if [ -n "$approved_id" ]; then
-        curl -s -X POST \
-            -H "Authorization: Bearer $JIRA_TOKEN" \
-            -H "Content-Type: application/json" \
-            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
-            -d "{\"transition\": {\"id\": \"$approved_id\"}}"
-        
-        # Refresh transitions
-        transitions=$(curl -s -X GET \
-            -H "Authorization: Bearer $JIRA_TOKEN" \
-            -H "Content-Type: application/json" \
-            "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
-        
-        local test_ok_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("test ok")) | .id' | head -1)
-        if [ -n "$test_ok_id" ]; then
-            curl -s -X POST \
-                -H "Authorization: Bearer $JIRA_TOKEN" \
-                -H "Content-Type: application/json" \
-                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
-                -d "{\"transition\": {\"id\": \"$test_ok_id\"}}"
-            
-            # Try Done again
-            transitions=$(curl -s -X GET \
-                -H "Authorization: Bearer $JIRA_TOKEN" \
-                -H "Content-Type: application/json" \
-                "$JIRA_URL/rest/api/2/issue/$issue_key/transitions")
-            
-            local done_id=$(echo "$transitions" | jq -r '.transitions[] | select(.name | ascii_downcase | contains("gotowe")) | .id' | head -1)
-            if [ -n "$done_id" ]; then
-                curl -s -X POST \
-                    -H "Authorization: Bearer $JIRA_TOKEN" \
-                    -H "Content-Type: application/json" \
-                    "$JIRA_URL/rest/api/2/issue/$issue_key/transitions" \
-                    -d "{\"transition\": {\"id\": \"$done_id\"}}" \
-                    && echo "✓ Marked $issue_key as Done" \
-                    && return 0
-            fi
-        fi
-    fi
-    
-    echo "✗ Could not find path to Done. Available transitions:"
-    echo "$transitions" | jq -r '.transitions[] | "  - \(.name)"'
-    return 1
+    # Try both English and Polish names for Done status
+    jira-transition-to "$issue_key" "Gotowe" 10 || jira-transition-to "$issue_key" "Done" 10
 }
 
 jira-ctx() {
@@ -679,4 +723,56 @@ jira-ctx() {
 # Alias for backward compatibility
 jira-switch() {
     jira-ctx "$@"
+}
+
+jira-checklist() {
+    local key="$1"
+    shift
+    local items=("$@")
+    
+    if [ -z "$key" ] || [ ${#items[@]} -eq 0 ]; then
+        echo "Usage: jira-checklist DEV1-123 \"Item 1\" \"Item 2\" \"Item 3\""
+        return 1
+    fi
+    
+    # Build checklist items in Jira format
+    local checklist_items="["
+    local first=true
+    for item in "${items[@]}"; do
+        if [ "$first" = false ]; then
+            checklist_items+=","
+        fi
+        checklist_items+="{\"name\":\"$item\",\"checked\":false}"
+        first=false
+    done
+    checklist_items+="]"
+    
+    # Try to find checklist custom field (usually customfield_10060 or similar)
+    # Get issue to find available custom fields
+    local response=$(curl -s -X GET \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$key?fields=*all")
+    
+    # Look for checklist field (common names: customfield_10060, customfield_10070, etc)
+    local checklist_field=$(echo "$response" | jq -r '.fields | keys[] | select(startswith("customfield_10")) | select(. as $k | .fields[$k] // {} | type == "object" and has("items"))' | head -1)
+    
+    if [ -z "$checklist_field" ]; then
+        echo "✗ Could not find checklist custom field. Adding as comment instead..."
+        local comment_text="*Checklist:*"
+        for item in "${items[@]}"; do
+            comment_text+="\\n- [ ] $item"
+        done
+        jira-comment "$key" "$comment_text"
+        return
+    fi
+    
+    # Update issue with checklist
+    curl -s -X PUT \
+        -H "Authorization: Bearer $JIRA_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$JIRA_URL/rest/api/2/issue/$key" \
+        -d "{\"fields\": {\"$checklist_field\": $checklist_items}}" \
+        && echo "✓ Added checklist to $key" \
+        || echo "✗ Failed to add checklist"
 }

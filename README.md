@@ -1,34 +1,42 @@
 # Jira CLI Helpers
 
-Zestaw pomocniczych funkcji bash do zarządzania zadaniami w Jira z linii komend.
+CLI tools for managing JIRA tasks from command line.
 
-## Instalacja
+> **This tool is designed to be used as a git submodule** in the `my-dev-tools` repository.
 
-1. Sklonuj repozytorium:
+## Installation via my-dev-tools (Recommended)
+
+```bash
+cd ~/Projects/my-dev-tools
+./init.sh  # Auto-initializes all submodules including this one
+```
+
+The init script will:
+- ✅ Check if `~/.jira-config` exists
+- ✅ Verify shell sourcing configuration
+- ✅ Display setup instructions if needed
+
+## Standalone Installation
+
+If using outside of my-dev-tools:
+
+1. Clone and run init:
 ```bash
 git clone https://github.com/GarothLongint/jira-cli-helpers.git
 cd jira-cli-helpers
+./init.sh
 ```
 
-2. Użyj interaktywnej konfiguracji:
+2. Use interactive configuration:
 ```bash
 source jira-helpers.sh
 jira-init
 ```
 
-Komenda `jira-init` przeprowadzi Cię przez konfigurację:
-- Poprosi o dane do połączenia z Jira (URL, token, projekt)
-- Utworzy plik konfiguracyjny z bezpiecznymi uprawnieniami (600)
-- Zaoferuje dodanie skryptu do shell startup (~/.zshrc lub ~/.bashrc)
-
-### Ręczna konfiguracja (alternatywna metoda)
-
-```bash
-cp jira-config.dist ~/.jira-config
-nano ~/.jira-config  # Wypełnij swoimi danymi
-chmod 600 ~/.jira-config
-source ~/path/to/jira-helpers.sh
-```
+The `jira-init` command will guide you through:
+- JIRA connection details (URL, token, project)
+- Creating config file with secure permissions (600)
+- Adding script to shell startup (~/.zshrc or ~/.bashrc)
 
 ## Konfiguracja
 
